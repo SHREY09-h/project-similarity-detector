@@ -70,7 +70,7 @@ assert(PRODUCT.safetyStatement.toLowerCase().includes('never executed'), 'the sa
 
 const enginePath = new URL('../../backend/app/similarity/engine.py', import.meta.url);
 const engineSource = readFileSync(enginePath, 'utf8');
-const weightBlock = engineSource.match(/weights\s*=\s*\{([\s\S]*?)\}/)?.[1];
+const weightBlock = engineSource.match(/COMPONENT_WEIGHTS\s*=\s*\{([\s\S]*?)\}/)?.[1];
 assert(weightBlock, 'backend component weights could not be located');
 
 const backendWeights = Object.fromEntries(
@@ -113,7 +113,9 @@ const interfaceCategories = new Set(PROJECT_CATEGORIES.map(item => item.label));
 for (const category of seededCategories) {
   assert(interfaceCategories.has(category), `seeded category "${category}" is missing from the interface`);
 }
-const backendThresholds = [...engineSource.matchAll(/score>=\.([0-9]+)/g)].map(match => Number(`0.${match[1]}`) * 100);
+const backendThresholds = [...engineSource.matchAll(/score\s*>=\s*0\.([0-9]+)/g)].map(
+  match => Number(`0.${match[1]}`) * 100,
+);
 assert(
   sameItems(SIMILARITY_LEVELS.slice(0, -1).map(level => level.minimum), backendThresholds),
   'similarity classification thresholds differ from the backend',

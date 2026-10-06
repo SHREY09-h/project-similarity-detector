@@ -1,54 +1,226 @@
-import hashlib, re
+import hashlib
+import re
+
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+
 from .ollama import semantic_similarity
 
-STOP = {"a","an","and","are","as","at","be","by","for","from","in","is","it","of","on","or","that","the","this","to","using","with"}
-def tokens(text): return [w for w in re.findall(r"[a-z0-9+#.-]+", (text or "").lower()) if w not in STOP and len(w)>1]
-def preprocess(text): return " ".join(tokens(text))
-def cosine(a,b):
-    if not preprocess(a) or not preprocess(b): return 0.0
-    matrix=TfidfVectorizer(ngram_range=(1,2)).fit_transform([preprocess(a),preprocess(b)])
-    return float(cosine_similarity(matrix[0],matrix[1])[0,0])
-def jaccard(a,b):
-    x,y=set(tokens(a)),set(tokens(b)); return len(x&y)/len(x|y) if x|y else 0.0
-def shingles(text,n=3):
-    t=tokens(text); return {" ".join(t[i:i+n]) for i in range(max(0,len(t)-n+1))}
+
+STOP_WORDS = {
+    "a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "in",
+    "is", "it", "of", "on", "or", "that", "the", "this", "to", "using", "with",
+}
+
+COMPONENT_WEIGHTS = {
+    "title": 0.10,
+    "abstract": 0.25,
+    "report": 0.20,
+    "keywords": 0.15,
+    "minhash": 0.10,
+    "code": 0.20,
+}
+
+
+def _text(value):
+    """Return clean text without allowing None to become the word 'none'."""
+    return value if isinstance(value, str) else ""
+
+
+def tokens(text):
+    return [
+        word
+        for word in re.findall(r"[a-z0-9+#.-]+", _text(text).lower())
+        if word not in STOP_WORDS and len(word) > 1
+    ]
+
+
+def preprocess(text):
+    return " ".join(tokens(text))
+
+
+def cosine(first, second):
+    first = preprocess(first)
+    second = preprocess(second)
+    if not first or not second:
+        return 0.0
+    matrix = TfidfVectorizer(ngram_range=(1, 2)).fit_transform([first, second])
+    return float(cosine_similarity(matrix[0], matrix[1])[0, 0])
+
+
+def jaccard(first, second):
+    first_tokens = set(tokens(first))
+    second_tokens = set(tokens(second))
+    union = first_tokens | second_tokens
+    return len(first_tokens & second_tokens) / len(union) if union else 0.0
+
+
+def shingles(text, size=3):
+    words = tokens(text)
+    return {
+        " ".join(words[index:index + size])
+        for index in range(max(0, len(words) - size + 1))
+    }
+
+
 def minhash(text, permutations=64):
-    values=shingles(text) or set(tokens(text))
-    if not values:return []
-    return [min(int(hashlib.sha1(f"{i}:{v}".encode()).hexdigest(),16) for v in values) for i in range(permutations)]
-def minhash_similarity(a,b):
-    x,y=minhash(a),minhash(b); return sum(i==j for i,j in zip(x,y))/len(x) if x and y else 0.0
+    values = shingles(text) or set(tokens(text))
+    if not values:
+        return []
+    return [
+        min(
+            int(hashlib.sha1(f"{seed}:{value}".encode()).hexdigest(), 16)
+            for value in values
+        )
+        for seed in range(permutations)
+    ]
+
+
+def minhash_similarity(first, second):
+    first_signature = minhash(first)
+    second_signature = minhash(second)
+    if not first_signature or not second_signature:
+        return 0.0
+    equal_hashes = sum(
+        first_hash == second_hash
+        for first_hash, second_hash in zip(first_signature, second_signature)
+    )
+    return equal_hashes / len(first_signature)
+
+
 def normalize_code(code):
-    code=re.sub(r"/\*.*?\*/|//[^\n]*|#[^\n]*", " ", code or "", flags=re.S)
-    raw=re.findall(r'"(?:\\.|[^"\\])*"|\b\d+(?:\.\d+)?\b|[A-Za-z_$][\w$]*|==|!=|<=|>=|&&|\|\||[-+*/%=<>!&|{}()[\];,.?:]',code)
-    reserved={"if","else","for","while","return","class","def","function","import","from","new","try","catch","public","private","static","void","int","string","const","let","var","async","await"}
-    return " ".join(t.lower() if t.lower() in reserved or not re.match(r"[A-Za-z_$]",t) else "ID" for t in raw)
-def code_similarity(a,b):
-    a,b=normalize_code(a),normalize_code(b)
-    return (cosine(a,b)+jaccard(a,b))/2 if a and b else 0.0
+    code = re.sub(
+        r"/\*.*?\*/|//[^\n]*|#[^\n]*",
+        " ",
+        _text(code),
+        flags=re.S,
+    )
+    raw_tokens = re.findall(
+        r"'(?:\\.|[^'\\])*'|\"(?:\\.|[^\"\\])*\"|\b\d+(?:\.\d+)?\b|"
+        r"[A-Za-z_$][\w$]*|==|!=|<=|>=|&&|\|\||[-+*/%=<>!&|{}()[\];,.?:]",
+        code,
+    )
+    reserved = {
+        "if", "else", "for", "while", "return", "class", "def", "function",
+        "import", "from", "new", "try", "catch", "public", "private", "static",
+        "void", "int", "string", "const", "let", "var", "async", "await",
+    }
+    return " ".join(
+        token.lower()
+        if token.lower() in reserved or not re.match(r"[A-Za-z_$]", token)
+        else "ID"
+        for token in raw_tokens
+    )
+
+
+def code_similarity(first, second):
+    first = normalize_code(first)
+    second = normalize_code(second)
+    if not first or not second:
+        return 0.0
+    return (cosine(first, second) + jaccard(first, second)) / 2
+
+
 def classify(score):
-    return "Very High Similarity" if score>=.85 else "High Similarity" if score>=.70 else "Significant Similarity" if score>=.50 else "Moderate Similarity" if score>=.25 else "Low Similarity"
+    if score >= 0.85:
+        return "Very High Similarity"
+    if score >= 0.70:
+        return "High Similarity"
+    if score >= 0.50:
+        return "Significant Similarity"
+    if score >= 0.25:
+        return "Moderate Similarity"
+    return "Low Similarity"
+
+
+def _combined_text(*parts):
+    return " ".join(_text(part).strip() for part in parts if _text(part).strip())
+
+
+def _keyword_text(value):
+    if not isinstance(value, (list, tuple, set)):
+        return ""
+    return " ".join(_text(item) for item in value)
+
+
+def _candidate_value(candidate, name):
+    return getattr(candidate, name, None)
+
+
+def _build_evidence(scores):
+    evidence = []
+    if scores["title"] >= 0.45:
+        evidence.append("The project titles use closely related terminology")
+    if scores["abstract"] >= 0.35:
+        evidence.append("The abstracts and implementation descriptions discuss related ideas")
+    if scores["report"] is not None and scores["report"] >= 0.35:
+        evidence.append("The uploaded reports contain similar vocabulary and phrases")
+    if scores["keywords"] >= 0.25:
+        evidence.append("The projects share a strong set of declared topics and keywords")
+    if scores["minhash"] >= 0.30:
+        evidence.append("MinHash detected repeated three-word text patterns")
+    if scores["code"] is not None and scores["code"] >= 0.35:
+        evidence.append("The normalized source-code token structures are similar")
+    return evidence or ["The candidate was ranked using the available evidence components"]
+
+
 def compare_projects(query, candidate):
-    title=cosine(query.get("title"),candidate.title)
-    query_abstract=f'{query.get("abstract","")} {query.get("description","")}'
-    candidate_abstract=f"{candidate.abstract} {candidate.description}"
-    abstract=semantic_similarity(query_abstract,candidate_abstract)
-    if abstract is None: abstract=cosine(query_abstract,candidate_abstract)
-    report=cosine(query.get("report_text"),candidate.report_text)
-    keyword=jaccard(" ".join(query.get("keywords",[]))," ".join(candidate.keywords or []))
-    approx=minhash_similarity(" ".join([query.get("abstract", ""),query.get("description", ""),query.get("report_text","")])," ".join([candidate.abstract,candidate.description or "",candidate.report_text or ""]))
-    code=code_similarity(query.get("source_code"),candidate.source_code)
-    signals={"title":title,"abstract":abstract,"report":report,"keywords":keyword,"minhash":approx,"code":code}
-    weights={"title":.10,"abstract":.25,"report":.20,"keywords":.15,"minhash":.10,"code":.20}
-    available={k:v for k,v in signals.items() if k not in {"report","code"} or (query.get("report_text" if k=="report" else "source_code") and getattr(candidate,"report_text" if k=="report" else "source_code"))}
-    total=sum(weights[k] for k in available); score=sum(available[k]*weights[k] for k in available)/total
-    shared=sorted(set(tokens(" ".join(query.get("keywords",[]))+" "+query.get("abstract",""))) & set(tokens(" ".join(candidate.keywords or [])+" "+candidate.abstract)))[:10]
-    reasons=[]
-    if abstract>.35: reasons.append("Related abstract and project-description language")
-    if keyword>.25: reasons.append("Strong overlap in declared topics and keywords")
-    if code>.35: reasons.append("Similar normalized source-code token structure")
-    if approx>.3: reasons.append("MinHash found shared text shingles")
-    components={k:(round(v,4) if k in available else None) for k,v in signals.items()}
-    return {"score":round(score,4),"classification":classify(score),"components":components,"shared_keywords":shared,"evidence":reasons or ["Ranked by the available evidence components"]}
+    """Compare a submitted project with one repository candidate."""
+    query_abstract = _combined_text(query.get("abstract"), query.get("description"))
+    candidate_abstract = _combined_text(
+        _candidate_value(candidate, "abstract"),
+        _candidate_value(candidate, "description"),
+    )
+    query_report = _text(query.get("report_text"))
+    candidate_report = _text(_candidate_value(candidate, "report_text"))
+    query_code = _text(query.get("source_code"))
+    candidate_code = _text(_candidate_value(candidate, "source_code"))
+
+    abstract_score = semantic_similarity(query_abstract, candidate_abstract)
+    if abstract_score is None:
+        abstract_score = cosine(query_abstract, candidate_abstract)
+
+    scores = {
+        "title": cosine(query.get("title"), _candidate_value(candidate, "title")),
+        "abstract": abstract_score,
+        "report": cosine(query_report, candidate_report)
+        if query_report and candidate_report else None,
+        "keywords": jaccard(
+            _keyword_text(query.get("keywords")),
+            _keyword_text(_candidate_value(candidate, "keywords")),
+        ),
+        "minhash": minhash_similarity(
+            _combined_text(query_abstract, query_report),
+            _combined_text(candidate_abstract, candidate_report),
+        ),
+        "code": code_similarity(query_code, candidate_code)
+        if query_code and candidate_code else None,
+    }
+
+    available = {name: value for name, value in scores.items() if value is not None}
+    available_weight = sum(COMPONENT_WEIGHTS[name] for name in available)
+    overall_score = (
+        sum(value * COMPONENT_WEIGHTS[name] for name, value in available.items())
+        / available_weight
+        if available_weight else 0.0
+    )
+
+    query_terms = set(tokens(_combined_text(
+        _keyword_text(query.get("keywords")), query_abstract
+    )))
+    candidate_terms = set(tokens(_combined_text(
+        _keyword_text(_candidate_value(candidate, "keywords")), candidate_abstract
+    )))
+    shared_keywords = sorted(query_terms & candidate_terms)[:10]
+
+    rounded_scores = {
+        name: round(value, 4) if value is not None else None
+        for name, value in scores.items()
+    }
+    return {
+        "score": round(overall_score, 4),
+        "classification": classify(overall_score),
+        "components": rounded_scores,
+        "shared_keywords": shared_keywords,
+        "evidence": _build_evidence(scores),
+    }
