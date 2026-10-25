@@ -63,7 +63,7 @@ def delete_project(project_id:int,db:Session=Depends(get_db)):
     db.delete(item);db.commit()
 
 async def read_report(file):
-    if not file:return ""
+    if not file or not file.filename:return ""
     data=await file.read()
     if not data or len(data)>MAX_REPORT: raise HTTPException(400,"Report is empty or exceeds 10 MB")
     ext=os.path.splitext(file.filename or "")[1].lower()
@@ -73,7 +73,7 @@ async def read_report(file):
         except Exception:raise HTTPException(400,"The PDF could not be parsed")
     raise HTTPException(400,"Report must be PDF or TXT")
 async def read_source(file):
-    if not file:return ""
+    if not file or not file.filename:return ""
     data=await file.read()
     if not data or len(data)>MAX_SOURCE:raise HTTPException(400,"Source is empty or exceeds 5 MB")
     ext=os.path.splitext(file.filename or "")[1].lower()

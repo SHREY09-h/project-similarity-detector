@@ -51,7 +51,10 @@ export default function AnalyzerPage({ onNavigate }) {
     setStage(0);
     const timer = setInterval(() => setStage(value => Math.min(value + 1, WORKFLOW_STEPS.length - 1)), 360);
     try {
-      const result = await api.analyze(new FormData(event.currentTarget));
+      const formData = new FormData(event.currentTarget);
+      if (!report) formData.delete('report');
+      if (!source) formData.delete('source');
+      const result = await api.analyze(formData);
       clearInterval(timer);
       onNavigate(`/results/${result.id}`);
     } catch (caught) {

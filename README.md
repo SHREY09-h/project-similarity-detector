@@ -1,5 +1,7 @@
 # Project Similarity Detection System
 
+For a faculty-facing overview, step-by-step local startup, and a suggested demonstration walkthrough, see [FACULTY_DEMO_GUIDE.md](FACULTY_DEMO_GUIDE.md).
+
 An explainable academic-review application that compares one submitted project with a historical repository. The result presents ranked matches, an overall similarity score and six visible evidence components.
 
 ## What the system compares

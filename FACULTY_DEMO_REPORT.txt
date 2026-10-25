@@ -1,0 +1,9 @@
+Project Similarity Detection System - Demonstration Report
+
+Purpose: Compare an academic project with records in a historical project repository and give faculty an explainable ranking for human review.
+
+Implementation: The React and Vite frontend collects a title, abstract, keywords, category, and optional evidence. A FastAPI backend parses text from the report and source files and compares them with locally stored project records in SQLite.
+
+Methods: The engine combines TF-IDF cosine similarity for project language, Jaccard overlap for terms, MinHash over three-word shingles, and normalized source-code token comparison. Abstracts may use local Ollama embeddings when available, with a TF-IDF fallback.
+
+Review: Results show an overall score, six component scores, shared terms, evidence messages, and ranked candidates. Similarity supports human review and is not an automatic plagiarism decision. Uploaded source code is read as text and not executed.
