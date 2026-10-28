@@ -9,6 +9,7 @@ export const PRODUCT = {
 export const NAV_ITEMS = [
   { label: 'Analyze', mobileLabel: 'Analyze a project', path: '/analyze' },
   { label: 'Repository', mobileLabel: 'Browse repository', path: '/projects' },
+  { label: 'Import projects', mobileLabel: 'Import reference projects', path: '/import-projects' },
   { label: 'How it works', mobileLabel: 'Review the method', path: '/how-it-works' },
 ];
 

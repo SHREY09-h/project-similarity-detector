@@ -15,6 +15,45 @@ An explainable academic-review application that compares one submitted project w
 
 Uploaded source code is read as text and is never executed. Similarity supports reviewer judgment; it does not automatically declare plagiarism.
 
+## Add your own reference projects
+
+Open **Import projects** in the website and select a ZIP containing up to 50 project folders. Each folder needs a `project.json` file with a title and either an abstract, a description, or enough README/report text to describe the work. README Markdown, TXT, PDF, and supported source files are read as comparison evidence.
+
+```text
+references.zip
+├── LibraryApp/
+│   ├── project.json
+│   ├── README.md
+│   └── src/
+└── CropDetector/
+    ├── project.json
+    ├── report.pdf
+    └── src/
+```
+
+Example `project.json`:
+
+```json
+{
+  "title": "Library App",
+  "abstract": "A college library system for managing books and loans.",
+  "description": "Search, borrowing, and return tracking.",
+  "category": "Web Development",
+  "academic_year": "2025-26",
+  "keywords": ["library", "loans"]
+}
+```
+
+To create a ZIP for the example project on Windows, run this from the project folder:
+
+```powershell
+Compress-Archive -Path .\examples\reference-projects\LibraryApp -DestinationPath .\references.zip -Force
+```
+
+The preview identifies invalid folders and projects whose title or evidence already exists. Only valid, non-duplicate projects are added. ZIP uploads are limited to 20 MiB, 50 projects, 500 file entries, 1 MiB per file, 5 MiB of supported files per project, and 60 MiB total uncompressed data. Each PDF can contain at most 100 pages. ZIP paths are checked before reading; files are not extracted to disk, and uploaded code is never run.
+
+The import API has two steps: `POST /api/projects/import/preview` checks the archive without saving it; `POST /api/projects/import` adds valid projects and skips duplicates. Imported projects can be removed from their project detail page until they are used in a saved analysis, which preserves the history of past comparisons.
+
 ## Run locally on Windows
 
 ### Fastest reliable start

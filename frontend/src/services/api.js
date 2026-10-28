@@ -26,6 +26,17 @@ async function request(path, options) {
 export const api = {
   projects: (query = '') => request('/projects' + query),
   project: id => request(`/projects/${id}`),
+  deleteProject: id => request(`/projects/${id}`, { method: 'DELETE' }),
   analysis: id => request(`/analysis/${id}`),
   analyze: data => request('/analysis', { method: 'POST', body: data }),
+  previewProjectImport: file => {
+    const data = new FormData();
+    data.append('archive', file);
+    return request('/projects/import/preview', { method: 'POST', body: data });
+  },
+  importProjects: file => {
+    const data = new FormData();
+    data.append('archive', file);
+    return request('/projects/import', { method: 'POST', body: data });
+  },
 };

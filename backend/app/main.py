@@ -8,7 +8,13 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from pypdf import PdfReader
 from .database import Base, SessionLocal, engine, get_db
-from .models import Analysis, Project, SimilarityResult
+from .models import Analysis, AnalysisSearchSummary, ImportedProjectSource, Project, SimilarityResult
+from .project_import import (
+    MAX_ARCHIVE_BYTES,
+    mark_duplicates,
+    parse_project_archive,
+    public_preview,
+)
 from .seed import seed
 from .similarity import compare_projects
 
@@ -19,6 +25,60 @@ class ProjectIn(BaseModel):
 class ProjectOut(ProjectIn):
     model_config=ConfigDict(from_attributes=True)
     id:int; created_at:object
+    is_imported:bool=False
+
+def project_payload(item,db):
+    data=ProjectOut.model_validate(item).model_dump()
+    data["is_imported"]=db.get(ImportedProjectSource,item.id) is not None
+    return data
+
+def preview_import_data(data,db):
+    entries=mark_duplicates(parse_project_archive(data),db,Project)
+    projects=public_preview(entries)
+    return {
+        "projects":projects,
+        "ready_count":sum(item["valid"] and not item.get("duplicate",False) for item in entries),
+        "duplicate_count":sum(item.get("duplicate",False) for item in entries),
+        "invalid_count":sum(not item["valid"] for item in entries),
+    }
+
+def save_imported_projects(data,archive_name,db):
+    entries=mark_duplicates(parse_project_archive(data),db,Project)
+    imported=[]
+    try:
+        for entry in entries:
+            if not entry["valid"] or entry.get("duplicate",False):
+                continue
+            project=Project(**entry["project"])
+            db.add(project)
+            db.flush()
+            db.add(ImportedProjectSource(project_id=project.id,archive_name=(archive_name or "")[:240]))
+            imported.append(entry["project"]["title"])
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return {
+        "imported_count":len(imported),
+        "imported_titles":imported,
+        "duplicate_count":sum(item.get("duplicate",False) for item in entries),
+        "skipped_count":sum(not item["valid"] for item in entries),
+    }
+
+def remove_imported_project(project_id,db):
+    item=db.get(Project,project_id)
+    if not item:raise HTTPException(404,"Project not found")
+    marker=db.get(ImportedProjectSource,project_id)
+    if not marker:raise HTTPException(403,"Only imported reference projects can be removed here.")
+    if db.query(SimilarityResult).filter_by(project_id=project_id).first():
+        raise HTTPException(409,"This project appears in a saved comparison and cannot be removed without changing its history.")
+    db.delete(marker);db.delete(item);db.commit()
+
+def rank_project_candidates(query,db):
+    candidates=db.query(Project).all()
+    ranked=[(candidate,compare_projects(query,candidate)) for candidate in candidates]
+    ranked.sort(key=lambda item:item[1]["score"],reverse=True)
+    return len(candidates),ranked[:10]
 
 @asynccontextmanager
 async def lifespan(app):
@@ -47,20 +107,31 @@ def projects(db:Session=Depends(get_db),search:str="",category:str="",year:str="
     if category:q=q.filter(Project.category==category)
     if year:q=q.filter(Project.academic_year==year)
     q=q.order_by(Project.title if sort=="title" else (Project.created_at.asc() if sort=="oldest" else Project.created_at.desc()))
-    return q.all()
+    return [project_payload(item,db) for item in q.all()]
 @app.post("/api/projects",response_model=ProjectOut,status_code=201)
 def add_project(data:ProjectIn,db:Session=Depends(get_db)):
     item=Project(**data.model_dump());db.add(item);db.commit();db.refresh(item);return item
+
+@app.post("/api/projects/import/preview")
+async def preview_project_import(archive:UploadFile=File(...),db:Session=Depends(get_db)):
+    """Inspect a reference-project ZIP without saving any project data."""
+    data=await archive.read(MAX_ARCHIVE_BYTES+1)
+    return preview_import_data(data,db)
+
+@app.post("/api/projects/import")
+async def import_projects(archive:UploadFile=File(...),db:Session=Depends(get_db)):
+    """Import valid, non-duplicate projects from a reference ZIP."""
+    data=await archive.read(MAX_ARCHIVE_BYTES+1)
+    return save_imported_projects(data,archive.filename,db)
+
 @app.get("/api/projects/{project_id}",response_model=ProjectOut)
 def project(project_id:int,db:Session=Depends(get_db)):
     item=db.get(Project,project_id)
     if not item:raise HTTPException(404,"Project not found")
-    return item
+    return project_payload(item,db)
 @app.delete("/api/projects/{project_id}",status_code=204)
 def delete_project(project_id:int,db:Session=Depends(get_db)):
-    item=db.get(Project,project_id)
-    if not item:raise HTTPException(404,"Project not found")
-    db.delete(item);db.commit()
+    remove_imported_project(project_id,db)
 
 async def read_report(file):
     if not file or not file.filename:return ""
@@ -90,18 +161,18 @@ async def read_source(file):
 async def analyze(title:Annotated[str,Form(min_length=3,max_length=240)],abstract:Annotated[str,Form(min_length=20,max_length=2000)],keywords:Annotated[str,Form()]="",description:Annotated[str,Form()]="",category:Annotated[str,Form()]="Other",academic_year:Annotated[str,Form()]="",team_name:Annotated[str,Form()]="",report:UploadFile|None=File(None),source:UploadFile|None=File(None),db:Session=Depends(get_db)):
     report_text=await read_report(report); source_code=await read_source(source)
     query={"title":title,"abstract":abstract,"description":description,"keywords":[x.strip() for x in keywords.split(",") if x.strip()],"report_text":report_text,"source_code":source_code}
-    ranked=[]
-    for candidate in db.query(Project).all(): ranked.append((candidate,compare_projects(query,candidate)))
-    ranked.sort(key=lambda x:x[1]["score"],reverse=True); ranked=ranked[:10]
+    candidates_searched,ranked=rank_project_candidates(query,db)
     top=ranked[0][1] if ranked else {"score":0,"classification":"Low Similarity"}
     analysis=Analysis(title=title,category=category,academic_year=academic_year,team_name=team_name,overall_score=top["score"],classification=top["classification"]);db.add(analysis);db.flush()
+    db.add(AnalysisSearchSummary(analysis_id=analysis.id,candidates_searched=candidates_searched))
     for rank,(candidate,result) in enumerate(ranked,1):db.add(SimilarityResult(analysis_id=analysis.id,project_id=candidate.id,rank=rank,**result))
     db.commit();return {"id":analysis.id,"status":"complete","overall_score":top["score"],"classification":top["classification"]}
 def analysis_payload(item,db):
     results=[]
     for r in db.query(SimilarityResult).filter_by(analysis_id=item.id).order_by(SimilarityResult.rank).all():
         p=db.get(Project,r.project_id);results.append({"rank":r.rank,"score":r.score,"classification":r.classification,"components":r.components,"shared_keywords":r.shared_keywords,"evidence":r.evidence,"project":{"id":p.id,"title":p.title,"category":p.category,"academic_year":p.academic_year,"abstract":p.abstract}})
-    return {"id":item.id,"title":item.title,"category":item.category,"academic_year":item.academic_year,"team_name":item.team_name,"overall_score":item.overall_score,"classification":item.classification,"created_at":item.created_at,"results":results}
+    summary=db.get(AnalysisSearchSummary,item.id)
+    return {"id":item.id,"title":item.title,"category":item.category,"academic_year":item.academic_year,"team_name":item.team_name,"overall_score":item.overall_score,"classification":item.classification,"created_at":item.created_at,"candidates_searched":summary.candidates_searched if summary else None,"results":results}
 @app.get("/api/analysis/{analysis_id}")
 @app.get("/api/analysis/{analysis_id}/results")
 def get_analysis(analysis_id:int,db:Session=Depends(get_db)):

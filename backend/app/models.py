@@ -18,6 +18,12 @@ class Project(Base):
     source_code = Column(Text, default="")
     created_at = Column(DateTime(timezone=True), default=now)
 
+class ImportedProjectSource(Base):
+    __tablename__ = "imported_project_sources"
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True)
+    archive_name = Column(String(240), default="")
+    imported_at = Column(DateTime(timezone=True), default=now)
+
 class Analysis(Base):
     __tablename__ = "analyses"
     id = Column(Integer, primary_key=True)
@@ -28,6 +34,11 @@ class Analysis(Base):
     overall_score = Column(Float, default=0)
     classification = Column(String(40), default="Low Similarity")
     created_at = Column(DateTime(timezone=True), default=now)
+
+class AnalysisSearchSummary(Base):
+    __tablename__ = "analysis_search_summaries"
+    analysis_id = Column(Integer, ForeignKey("analyses.id", ondelete="CASCADE"), primary_key=True)
+    candidates_searched = Column(Integer, nullable=False, default=0)
 
 class SimilarityResult(Base):
     __tablename__ = "similarity_results"

@@ -9,6 +9,7 @@
 - **Web application:** A React and Vite interface with a project submission form, repository search and filters, project detail pages, a comparison explanation page, and ranked analysis results.
 - **API service:** A FastAPI backend with endpoints for health, algorithm information, repository projects, and creating and retrieving analyses.
 - **Project repository:** A SQLAlchemy data model backed by SQLite by default. On a fresh database, the service loads ten clearly identifiable demonstration project records.
+- **User reference imports:** Faculty can preview a ZIP of reference projects, see invalid folders and duplicates, and add eligible projects to the same comparison repository.
 - **Comparison methods:** Title and abstract text comparison with TF-IDF and cosine similarity; optional local Ollama semantic embeddings with a TF-IDF fallback; keyword Jaccard overlap; 64-signature MinHash over three-token text shingles; and normalized source-code token comparison.
 - **Explainable scoring:** Six weighted components (title 10%, abstract 25%, report 20%, keywords 15%, MinHash 10%, and code 20%). Report and code evidence are optional; unavailable components are excluded and the remaining weights are renormalized.
 - **File handling:** Accepts PDF/TXT reports and supported source files or ZIPs within size limits. Uploaded code is treated as text and is never executed.
@@ -47,11 +48,12 @@ The first backend launch creates the local database and adds ten demonstration c
 
 1. **Introduce the goal.** Explain that the system ranks potentially related historical projects and shows evidence for a human reviewer.
 2. **Show the process and methods.** Open the site's **How it works** page. Point out the six components and explain that missing report/code evidence is not treated as a zero.
-3. **Show the repository.** Open **Projects**. Search or filter the demonstration records, open one record, and show its description, category, keywords, and academic year. State that these are seeded demo records, not an institution's real archive.
-4. **Submit a comparison.** Open **Start comparison**. Enter a title and a project description of at least 20 characters. Select a category. Keywords, academic year, and implementation notes are optional. A PDF/TXT report and source file or ZIP are also optional.
-5. **Run it.** Select **Run project comparison** and wait for the results page. For a meaningful demonstration, describe a topic related to one of the visible sample projects and include specific methods/technologies in the description.
-6. **Explain the result.** Show the overall score and classification, then the individual components, evidence messages, shared concept terms, and ranked repository candidates. Use **Compare** on a candidate to inspect the side-by-side context.
-7. **Show faculty review support.** Demonstrate the review decision and notes fields, then use the print action if a paper copy is useful. Explain that the saved decision currently lives only in that browser session.
+3. **Add reference projects.** Open **Import projects** and select a ZIP with one project folder per reference. Each folder needs `project.json` and may include README/report/source files. Review the preview and add projects marked **Ready to add**. Duplicate titles/content are skipped, as are invalid folders.
+4. **Show the repository.** Open **Projects**. Search for an imported project and show its description, category, keywords, and academic year. The ten seeded records remain available as demonstration candidates.
+5. **Submit a comparison.** Open **Start comparison**. Enter a title and a project description of at least 20 characters. Select a category. Keywords, academic year, and implementation notes are optional. A PDF/TXT report and source file or ZIP are also optional.
+6. **Run it.** Select **Run project comparison** and wait for the results page. Use a topic related to one of the projects you just imported.
+7. **Explain the result.** Show the overall score and classification, then the individual components, evidence messages, shared concept terms, and ranked repository candidates. Use **Compare** on a candidate to inspect the side-by-side context.
+8. **Show faculty review support.** Demonstrate the review decision and notes fields, then use the print action if a paper copy is useful. Explain that the saved decision currently lives only in that browser session.
 
 For a ready-made report upload during the walkthrough, use `FACULTY_DEMO_REPORT.txt` from the project folder.
 
@@ -60,6 +62,7 @@ For a ready-made report upload during the walkthrough, use `FACULTY_DEMO_REPORT.
 - Report: PDF or TXT, up to 10 MiB.
 - Source: `.py`, `.js`, `.jsx`, `.ts`, `.tsx`, `.java`, `.cpp`, `.c`, `.h`, `.cs`, or ZIP, up to 5 MiB.
 - ZIP processing reads up to 50 supported source files, each under 1 MiB. Source files are read as text and are not run.
+- Reference-project import accepts ZIP files up to 20 MiB, with up to 50 projects, 500 ZIP entries, 1 MiB per file, 5 MiB of supported project files per project, and 60 MiB total uncompressed data. PDFs may contain up to 100 pages. Supported reference text includes Markdown, TXT, PDF and the listed source extensions.
 
 ## Key project areas
 
@@ -67,6 +70,7 @@ For a ready-made report upload during the walkthrough, use `FACULTY_DEMO_REPORT.
 | --- | --- | --- |
 | Website pages and navigation | `frontend/src/App.jsx` | Repository, project details, results, and explanatory pages |
 | Project submission form | `frontend/src/components/AnalyzerPage.jsx` | Captures project details and optional files |
+| Reference project import | `frontend/src/components/ImportProjectsPage.jsx`, `backend/app/project_import.py` | Previews safe ZIP contents, detects duplicates and imports project records |
 | API client | `frontend/src/services/api.js` | Connects the website to the backend |
 | Backend routes and upload processing | `backend/app/main.py` | Handles API requests, parsing, and analysis storage |
 | Similarity algorithms and scoring | `backend/app/similarity/engine.py` | Computes component scores, ranking evidence, and classification |

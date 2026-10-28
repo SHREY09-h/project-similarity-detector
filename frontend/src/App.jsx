@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from './services/api';
 import AnalyzerPage from './components/AnalyzerPage';
+import ImportProjectsPage from './components/ImportProjectsPage';
 import ServiceLanding from './components/ServiceLanding';
 import {
   COMPARISON_METHODS,
@@ -251,9 +252,11 @@ function Projects() {
   );
 }
 
-function ProjectDetail({ id }) {
+function ProjectDetail({ id, onNavigate }) {
   const [p, setP] = useState();
   const [error, setError] = useState('');
+  const [deleteError, setDeleteError] = useState('');
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -269,6 +272,20 @@ function ProjectDetail({ id }) {
       active = false;
     };
   }, [id]);
+
+  async function removeImportedProject() {
+    if (!p?.is_imported || !window.confirm(`Remove “${p.title}” from the reference repository?`)) return;
+    setDeleting(true);
+    setDeleteError('');
+    try {
+      await api.deleteProject(p.id);
+      onNavigate('/projects');
+    } catch (caught) {
+      setDeleteError(caught.message);
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   if (error) {
     return (
@@ -341,6 +358,15 @@ function ProjectDetail({ id }) {
             <Link to="/analyze" className="button-link">
               Compare a project against this →
             </Link>
+            {p.is_imported && (
+              <div className="imported-project-controls">
+                <span className="imported-project-badge">Imported reference project</span>
+                <button type="button" className="remove-imported-project" disabled={deleting} onClick={removeImportedProject}>
+                  {deleting ? 'Removing…' : 'Remove from repository'}
+                </button>
+                {deleteError && <p className="error" role="alert">{deleteError}</p>}
+              </div>
+            )}
           </aside>
         </div>
       </article>
@@ -418,7 +444,7 @@ function Results({ id }) {
           <div>
             <p className="eyebrow">ANALYSIS #{a.id}</p>
             <h1>{a.title}</h1>
-            <p>Completed {new Date(a.created_at).toLocaleString()}</p>
+            <p>Completed {new Date(a.created_at).toLocaleString()} · Searched {a.candidates_searched ?? a.results.length} reference projects</p>
           </div>
         </div>
         <section className="result-empty">
@@ -503,7 +529,9 @@ function Results({ id }) {
           <p className="eyebrow">ANALYSIS REPORT #{a.id}</p>
           <h1>{a.title}</h1>
           <p>
-            Completed {new Date(a.created_at).toLocaleString()} · Compared against {a.results.length} repository candidate records
+            Completed {new Date(a.created_at).toLocaleString()} · {a.candidates_searched == null
+              ? `Showing ${a.results.length} saved matches`
+              : `Compared against ${a.candidates_searched} reference projects; showing ${a.results.length} ranked matches`}
           </p>
         </div>
         <div className="result-head-actions">
@@ -933,6 +961,8 @@ export default function App() {
         ? 'New Project Analysis'
         : path === '/projects'
         ? 'Project Repository'
+        : path === '/import-projects'
+        ? 'Import Reference Projects'
         : path === '/how-it-works'
         ? 'How the Comparison Works'
         : path.startsWith('/results/')
@@ -950,12 +980,14 @@ export default function App() {
       <AnalyzerPage onNavigate={go} />
     ) : path === '/projects' ? (
       <Projects />
+    ) : path === '/import-projects' ? (
+      <ImportProjectsPage />
     ) : path === '/how-it-works' ? (
       <How />
     ) : path.startsWith('/results/') ? (
       <Results id={path.split('/')[2]} />
     ) : path.startsWith('/projects/') ? (
-      <ProjectDetail id={path.split('/')[2]} />
+      <ProjectDetail id={path.split('/')[2]} onNavigate={go} />
     ) : (
       <main className="app-page">
         <PageTitle

@@ -27,6 +27,7 @@ try {
     ['/', 'Find related projects.', true],
     ['/analyze', 'Find related projects.', true],
     ['/projects', 'Browse comparison projects', true],
+    ['/import-projects', 'Import project files', true],
     ['/how-it-works', 'How the comparison works', true],
     ['/projects/1', 'Loading project', false],
     ['/results/1', 'Loading analysis', false],

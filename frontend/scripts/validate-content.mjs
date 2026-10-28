@@ -26,7 +26,7 @@ function sameItems(actual, expected) {
 }
 
 assert(EVIDENCE_COMPONENTS.length === 6, 'the interface must expose exactly six evidence components');
-assert(NAV_ITEMS.length === 3, 'main navigation must contain the three core application destinations');
+assert(NAV_ITEMS.length === 4, 'main navigation must include analyze, repository, import, and method destinations');
 assert(new Set(NAV_ITEMS.map(item => item.path)).size === NAV_ITEMS.length, 'navigation paths must be unique');
 assert(new Set(PROJECT_CATEGORIES.map(item => item.label)).size === PROJECT_CATEGORIES.length, 'project categories must be unique');
 assert(PROJECT_CATEGORIES.at(-1)?.label === 'Other', 'the fallback project category must remain last');

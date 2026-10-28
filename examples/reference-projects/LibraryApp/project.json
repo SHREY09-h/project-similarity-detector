@@ -1,0 +1,8 @@
+{
+  "title": "Library App",
+  "abstract": "A college library system for managing books, student accounts, loans, and returns.",
+  "description": "The application supports catalogue search, book borrowing, due-date tracking, and return records.",
+  "category": "Web Development",
+  "academic_year": "2025-26",
+  "keywords": ["library", "catalogue", "books", "loans"]
+}
